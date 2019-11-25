@@ -1,16 +1,24 @@
 from matplotlib.image import imread
 import numpy as np
-import scipy.signal
 import random
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from skimage.feature import match_template
+from skimage.transform import resize
+import time
 
 def getSubImg(img, size, cx, cy):
     halfSize = int(size / 2)
     (lx, ly) = (cx - halfSize, cy - halfSize)
     (rx, ry) = (cx + halfSize + 1, cy + halfSize + 1)
-    return img[ly:ry, lx:rx]
+    lxs = -lx if lx < 0 else 0
+    lys = -ly if ly < 0 else 0
+    (lx, ly) = (max(0, lx), max(0, ly))
+    (rx, ry) = (min(len(img[0]), rx), min(len(img), ry))
+    curr = img[ly:ry, lx:rx]
+    res = np.zeros((size, size))
+    res[lys:lys + len(curr), lxs:lxs + len(curr[0])] += curr
+    return res
 
 def ac(img, size, cx, cy):
     patch = getSubImg(img, size, cx, cy)
@@ -18,18 +26,23 @@ def ac(img, size, cx, cy):
     return match_template(surround, patch)
 
 
-def acAvg(img, cx, cy, step = 4, start = 11, end = 35):
+def acAvg(img, cx, cy, step = 4, start = 21, end = 70):
     accFreq = np.ones((start * 2 - 1, start * 2 - 1))
     accCorr = ac(img, start, cx, cy)
-    for i in range(start + step, end + 1, step):
+
+    """
+    #for i in range(start + step, end + 1, step):
+    for i in range(start + 4, start + 5, step):
         freq = np.ones((i * 2 - 1, i * 2 - 1))
         freq[step:(step + len(accFreq)), step:(step + len(accFreq))] += accFreq
         accFreq = freq
         corr = ac(img, i, cx, cy)
         corr[step:(step + len(accCorr)), step:(step + len(accCorr))] += accCorr
         accCorr = corr
+    """
+
     center = int(len(accCorr)/2)
-    accCorr[center - 2:center + 3, center - 2:center + 3] = np.zeros((5, 5))
+    accCorr[center - 1:center + 2, center - 1:center + 2] = np.zeros((3, 3))
     return np.divide(accCorr, accFreq)
 
 def findPeaks(img, numPeaks, thresholdFrac=0.5, neighSpan=1):
@@ -43,10 +56,9 @@ def findPeaks(img, numPeaks, thresholdFrac=0.5, neighSpan=1):
     dtype = [('row', int), ('col', int), ('intensity', np.float64)]
     indices = np.array(values, dtype=dtype)
 
-    # sort in-place in descending order
     indices[::-1].sort(order='intensity')
     res = []
-    # Perform suppression
+
     for idx in indices:
         intensity = idx[2]
         if intensity <= -1:
@@ -71,13 +83,9 @@ def findPeaks(img, numPeaks, thresholdFrac=0.5, neighSpan=1):
     return res
 
 
-def isParallel(v1, v2):
-    return abs(v1.dot(v2)/(np.linalg.norm(v1)*np.linalg.norm(v2))) > 0.8
-
-def frac(a):
-    return abs(a - round(a))
-
 def h(cpq, peaks, AC, converted, i, j):
+    def frac(a):
+        return abs(a - round(a))
     res = 0
     for k in range(len(peaks)):
         if k == i or k == j:
@@ -87,7 +95,9 @@ def h(cpq, peaks, AC, converted, i, j):
     return res
 
 def score(peaks, AC, alpha = 2):
-    best = -100000
+    def isBadAngle(v1, v2):
+        return abs(v1.dot(v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))) > 0.6
+    best = -1
     converted = (peaks - int(len(AC) / 2)).astype(float)
     finalCp = np.array([0, 0])
     finalCq = np.array([0, 0])
@@ -99,7 +109,7 @@ def score(peaks, AC, alpha = 2):
             cqc = converted[j]
             cpq = np.array([[cpc[0], cqc[0]],
                             [cpc[1], cqc[1]]])
-            if isParallel(cpc, cqc):
+            if isBadAngle(cpc, cqc):
                 continue
             cpq = np.linalg.inv(cpq)
             local = h(cpq, peaks, AC, converted, i, j)
@@ -111,14 +121,15 @@ def score(peaks, AC, alpha = 2):
                 best = local
     return best, finalCp, finalCq
 
-def visualizePeaks(peaks, x):
+################ util ################
+def visualizePeaks(peaks, x, cx, cy):
     grid = np.zeros((x, x))
     for peak in peaks:
         grid[peak[0]][peak[1]] = 1
     plt.imshow(grid)
     plt.show()
 
-def ranImg(size):
+def randImg(size):
     img = np.zeros((size, size))
     for i in range(size):
         for j in range(size):
@@ -140,7 +151,8 @@ def beleaguerImg(size):
     return img
 
 def footPrintImg():
-    img = imread('FID-300/references/00033.png')
+    img = imread('FID-300/references/00002.png')
+    #img = resize(img, (int(img.shape[0]/2), int(img.shape[1]/2)))
     return img
 
 
@@ -151,7 +163,8 @@ def showImg(img, x, y):
     ax.imshow(img)
 
     circ = Circle((x, y), 5, color="red")
-    ax.add_patch(circ)
+    if not (x == 0 and y == 0):
+        ax.add_patch(circ)
     # Show the image
     plt.show()
 
@@ -170,21 +183,50 @@ def showDir(img, v1, v2, cx, cy):
 
 def demo():
     # img = np.arange(0, 121, 1).reshape((11, 11))
-    (cx, cy) = (90, 110)
-    (start, end) = (23, 55)
-    skip = 6
+    (cx, cy) = (130, 80)
+    skip = 4
     size = 60
     img = footPrintImg()
+    heat = np.zeros((80, 40))
 
-    ac = acAvg(img, cx, cy, skip, start, end)
+    """
+    ac = acAvg(img, cx, cy)
     showImg(img, cx, cy)
+    peaks = findPeaks(ac, 7, 0.6, 6)
     plt.imshow(ac)
     plt.show()
-    peaks = findPeaks(ac, size**2, 0.8, 6)
+    visualizePeaks(peaks, 21 * 2 - 1, cx, cy)
     (sc, v1, v2) = score(peaks, ac)
-    visualizePeaks(peaks, end * 2 - 1)
-    print(sc, v1, v2)
     showDir(img, v1, v2, cx, cy)
+    print(sc)
 
+    """
+    (lx, rx) = (35, 75)
+    (ly, ry) = (20, 100)
+    for cx in range(lx, rx):
+        for cy in range(ly, ry):
+            ac = acAvg(img, cx, cy)
+            peaks = findPeaks(ac, 7, 0.5, 6)
+            print(cx, cy, len(peaks))
+            (sc, v1, v2) = score(peaks, ac)
+            heat[cy - ly][cx - lx] = sc
+    showImg(img[ly:ry, lx:rx], 0, 0)
+    plt.imshow(heat)
+    plt.show()
+
+def getSample():
+    (lx, rx) = (35, 75)
+    (ly, ry) = (20, 100)
+    img = footPrintImg()
+    heat = []
+    for cx in range(lx, rx):
+        heat.append([])
+        for cy in range(ly, ry):
+            ac = acAvg(img, cx, cy)
+            peaks = findPeaks(ac, 7, 0.5, 6)
+            print(cx, cy, len(peaks))
+            (sc, v1, v2) = score(peaks, ac)
+            heat[-1].append((sc, v1, v2))
+    return (img[ly:ry, lx:rx], heat)
 
 demo()
