@@ -226,7 +226,7 @@ def getSample():
             peaks = findPeaks(ac, 7, 0.5, 6)
             print(cx, cy, len(peaks))
             (sc, v1, v2) = score(peaks, ac)
-            heat[-1].append((sc, v1, v2))
+            heat[-1].append((sc, v1.astype(int), v2.astype(int)))
     return (img[ly:ry, lx:rx], heat)
 
 demo()
