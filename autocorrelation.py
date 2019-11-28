@@ -215,18 +215,20 @@ def demo():
     plt.show()
 
 def getSample():
-    (lx, rx) = (35, 75)
-    (ly, ry) = (20, 100)
+    (lx, rx) = (30, 90)
+    (ly, ry) = (20, 140)
     img = footPrintImg()
     heat = []
-    for cx in range(lx, rx):
+    hsum = 0.0
+    for cy in range(ly, ry):
         heat.append([])
-        for cy in range(ly, ry):
+        for cx in range(lx, rx):
             ac = acAvg(img, cx, cy)
             peaks = findPeaks(ac, 7, 0.5, 6)
-            print(cx, cy, len(peaks))
+            print(cy, cx, len(peaks))
             (sc, v1, v2) = score(peaks, ac)
             heat[-1].append((sc, v1.astype(int), v2.astype(int)))
-    return (img[ly:ry, lx:rx], heat)
+            hsum += sc
 
-demo()
+    hsum /= (rx - lx) * (ry - ly)
+    return (img[ly:ry, lx:rx], heat, hsum)
