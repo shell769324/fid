@@ -2,12 +2,14 @@ import cv2
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy import signal
+import random
+from skimage.feature import match_template
 
 from matplotlib.patches import Circle
 from matplotlib.image import imread
 
 from DLL import LinkedList, Node
-from autocorrelation import getSample
+from autocorrelation import getSample, getSampleWith
 
 
 def rect(X, v1, v2, img):
@@ -85,9 +87,9 @@ def compute_four_descriptor(x, v1, v2, img):
     dft_shift = np.fft.fftshift(discrete_ft)
     magnitude_spectrum = 20 * np.log(cv2.magnitude(dft_shift[:, :, 0], dft_shift[:, :, 1]))
     # Plotting the transformed img
-    # plt.imshow(magnitude_spectrum, cmap='gray')
-    # plt.title('Magnitude Spectrum')
-    # plt.show()
+    #plt.imshow(magnitude_spectrum, cmap='gray')
+    #plt.title('Magnitude Spectrum')
+    #plt.show()
     return magnitude_spectrum
 
 
@@ -128,28 +130,6 @@ def preprocess_H(H, avg):
     #print_ll(ll)
     return ll
 
-
-def similarity(f_x, f_y):
-    """
-    Computes the normalized cross-correlation of the Fourier Descriptor at point x and point y
-
-    Parameters:
-    f_x(2d array/img): the magnitude spectrum after ft at pixel x
-    f_y(2d array/img): the magnitude spectrum after ft at pixel y
-
-    Returns:
-    s(float): normalized cross-correlation
-    """
-    mean_x = np.mean(f_x)
-    mean_y = np.mean(f_y)
-    sigma_x = np.std(f_x)
-    sigma_y = np.std(f_y)
-    product = np.multiply(f_x - mean_x, f_y - mean_y)  # matrix result of multiplying x,y elementwise
-    sum = np.sum(product.flatten())
-    s = sum / (sigma_x * sigma_y)
-    return s
-
-
 def group_patterns(H, img, avg):
     """
     Based on the h_score of each pixel and groups pixels into patterns.
@@ -165,7 +145,7 @@ def group_patterns(H, img, avg):
     """
     patterns = []
     info_ll = preprocess_H(H, avg)  # coord_map maps [i,j] to node(H[i,j])
-    sim_threshold = 70
+    sim_threshold = 0.44
     s_scores = []
     while info_ll.front.next != info_ll.back:
         # Get the info of the current pixel
@@ -185,13 +165,17 @@ def group_patterns(H, img, avg):
             # Get the info of the other node
             y_data = y_node.data
             y_coord = y_data[0]
+            if np.linalg.norm(np.array([y_coord[0], y_coord[1]]) - np.array([x_coord[0], x_coord[1]])) < 35:
+                info_ll.delete_node(y_node)
+                y_node = y_node.next
+                continue
             f_y = compute_four_descriptor(y_coord, x_v1, x_v2, img)
             if len(f_y) == 0:
                 info_ll.delete_node(y_node)
                 y_node = y_node.next
                 continue
             # Check if the similarity between X and Y are high enough
-            s = similarity(f_x, f_y)
+            s = match_template(f_x, f_y)[0][0]
             s_scores.append(s)
             if s > sim_threshold:
                 temp = y_node
@@ -207,6 +191,56 @@ def group_patterns(H, img, avg):
     print(patterns)
     return patterns
 
+def darn(img, patterns, colors):
+    fig, ax = plt.subplots(1)
+    ax.set_aspect('equal')
+    ax.imshow(img)
+    for i in range(len(patterns)):
+        pattern = patterns[i]
+        (cx, cy) = (pattern[0][1], pattern[0][0])
+        (_, v1, v2) = pattern[1]
+        plt.plot([cx, cx + v2[1]], [cy, cy + v2[0]], c=colors[i], linewidth=5)
+        plt.plot([cx, cx + v1[1]], [cy, cy + v1[0]], c=colors[i], linewidth=5)
+    # Show the image
+    plt.show()
+
+def comp2(patterns1, patterns2, img1, img2):
+    totalSim = 0
+    colors2 = [np.random.rand(3, ) for _ in range(len(patterns2))]
+    colors1 = []
+    for i in range(len(patterns1)):
+        p1 = patterns1[i]
+        mag1 = compute_four_descriptor(p1[0], p1[1][1], p1[1][2], img1)
+        maxSim = -100
+        maxIdx = 0
+        for j in range(len(patterns2)):
+            p2 = patterns2[j]
+            mag2 = compute_four_descriptor(p2[0], p1[1][1], p1[1][2], img2)
+            if len(mag2) == 0:
+                continue
+            thisSim = match_template(mag1, mag2)[0][0]
+            if thisSim > maxSim:
+                maxSim = thisSim
+                maxIdx = j
+        colors1.append(colors2[maxIdx])
+        totalSim += maxSim
+    totalSim /= len(patterns1)
+    darn(img1, patterns1, colors1)
+    darn(img2, patterns2, colors2)
+    print("Similarity is", totalSim)
+
+
+def match():
+    (img1, H, avg) = getSampleWith("FID-300/tracks_cropped/00026.jpg")
+    patterns1 = group_patterns(H, img1, avg)
+    (img2, H, avg) = getSampleWith("FID-300/references/00013.png")
+    patterns2 = group_patterns(H, img2, avg)
+    (img3, H, avg) = getSampleWith("FID-300/references/00009.png")
+    patterns3 = group_patterns(H, img3, avg)
+    comp2(patterns1, patterns2, img1, img2)
+    comp2(patterns1, patterns3, img1, img3)
+
+match()
 
 img = imread('FID-300/references/00033.png')
 # compute_four_descriptor([70,70], [20,20], [0, 50], img)
@@ -214,15 +248,19 @@ img = imread('FID-300/references/00033.png')
 #      [(2, [2, 2], [2, 3]), (22, [2, 2], [2, 3])],
 #      [(3, [3, 2], [3, 3]), (-3, [3, 2], [3, 3])]]
 # print(H)
-(img, H, avg) = getSample()
-patterns = group_patterns(H, img, avg)
+def test():
+    (img, H, avg) = getSample()
+    patterns = group_patterns(H, img, avg)
 
-fig, ax = plt.subplots(1)
-ax.set_aspect('equal')
-# Show the image
-ax.imshow(img)
-for pattern in patterns:
-    circ = Circle(pattern[0], 1, color="red")
-    ax.add_patch(circ)
-# Show the image
-plt.show()
+    fig, ax = plt.subplots(1)
+    ax.set_aspect('equal')
+    # Show the image
+    ax.imshow(img)
+    for pattern in patterns:
+        (cx, cy) = (pattern[0][1], pattern[0][0])
+        (_, v1, v2) = pattern[1]
+        col = np.random.rand(3, )
+        plt.plot([cx, cx + v2[1]], [cy, cy + v2[0]], c=col, linewidth=5)
+        plt.plot([cx, cx + v1[1]], [cy, cy + v1[0]], c=col, linewidth=5)
+    # Show the image
+    plt.show()

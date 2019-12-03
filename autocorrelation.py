@@ -1,6 +1,7 @@
 from matplotlib.image import imread
 import numpy as np
 import random
+import math
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 from skimage.feature import match_template
@@ -151,7 +152,7 @@ def beleaguerImg(size):
     return img
 
 def footPrintImg():
-    img = imread('FID-300/references/00002.png')
+    img = imread('FID-300/tracks_cropped/00026.jpg')
     #img = resize(img, (int(img.shape[0]/2), int(img.shape[1]/2)))
     return img
 
@@ -199,15 +200,15 @@ def demo():
     (sc, v1, v2) = score(peaks, ac)
     showDir(img, v1, v2, cx, cy)
     print(sc)
-
     """
+#    (lx, rx) = (35, 75)
+#    (ly, ry) = (20, 100)
     (lx, rx) = (35, 75)
     (ly, ry) = (20, 100)
     for cx in range(lx, rx):
         for cy in range(ly, ry):
             ac = acAvg(img, cx, cy)
             peaks = findPeaks(ac, 7, 0.5, 6)
-            print(cx, cy, len(peaks))
             (sc, v1, v2) = score(peaks, ac)
             heat[cy - ly][cx - lx] = sc
     showImg(img[ly:ry, lx:rx], 0, 0)
@@ -215,20 +216,47 @@ def demo():
     plt.show()
 
 def getSample():
-    (lx, rx) = (30, 90)
-    (ly, ry) = (20, 140)
+    (lx, rx) = (50, 150)
+    (ly, ry) = (50, 150)
     img = footPrintImg()
+    plt.imshow(img)
+    plt.show()
     heat = []
     hsum = 0.0
     for cy in range(ly, ry):
         heat.append([])
+        print(cy)
         for cx in range(lx, rx):
             ac = acAvg(img, cx, cy)
             peaks = findPeaks(ac, 7, 0.5, 6)
-            print(cy, cx, len(peaks))
             (sc, v1, v2) = score(peaks, ac)
             heat[-1].append((sc, v1.astype(int), v2.astype(int)))
             hsum += sc
 
     hsum /= (rx - lx) * (ry - ly)
     return (img[ly:ry, lx:rx], heat, hsum)
+
+def getSampleWith(addr):
+    img = imread(addr)
+    (lx, rx) = (int(len(img[0])/4), int(len(img[0]) * 3/4))
+    (ly, ry) = (int(len(img)/4), int(len(img) * 3/4))
+    #(lx, rx) = (int(0), int(len(img[0])))
+    #(ly, ry) = (int(0), int(len(img)))
+    plt.imshow(img)
+    plt.show()
+    heat = []
+    hsum = 0.0
+    for cy in range(ly, ry):
+        heat.append([])
+        print(cy)
+        for cx in range(lx, rx):
+            ac = acAvg(img, cx, cy)
+            peaks = findPeaks(ac, 7, 0.5, 6)
+            (sc, v1, v2) = score(peaks, ac)
+            heat[-1].append((sc, v1.astype(int), v2.astype(int)))
+            hsum += sc
+
+    hsum /= (rx - lx) * (ry - ly)
+    return (img[ly:ry, lx:rx], heat, hsum)
+
+res = 0
