@@ -7,6 +7,7 @@ from matplotlib.patches import Circle
 from skimage.feature import match_template
 from skimage.transform import resize
 import time
+import multiprocessing as mp
 
 def getSubImg(img, size, cx, cy):
     halfSize = int(size / 2)
@@ -27,20 +28,18 @@ def ac(img, size, cx, cy):
     return match_template(surround, patch)
 
 
-def acAvg(img, cx, cy, step = 4, start = 21, end = 70):
+def acAvg(img, cx, cy, step = 8, start = 21, end = 50):
     accFreq = np.ones((start * 2 - 1, start * 2 - 1))
     accCorr = ac(img, start, cx, cy)
 
-    """
-    #for i in range(start + step, end + 1, step):
-    for i in range(start + 4, start + 5, step):
+    for i in range(start + step, end + 1, step):
+    #for i in range(start + 4, start + 5, step):
         freq = np.ones((i * 2 - 1, i * 2 - 1))
         freq[step:(step + len(accFreq)), step:(step + len(accFreq))] += accFreq
         accFreq = freq
         corr = ac(img, i, cx, cy)
         corr[step:(step + len(accCorr)), step:(step + len(accCorr))] += accCorr
         accCorr = corr
-    """
 
     center = int(len(accCorr)/2)
     accCorr[center - 1:center + 2, center - 1:center + 2] = np.zeros((3, 3))
@@ -98,7 +97,7 @@ def h(cpq, peaks, AC, converted, i, j):
 def score(peaks, AC, alpha = 2):
     def isBadAngle(v1, v2):
         return abs(v1.dot(v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))) > 0.6
-    best = -1
+    best = -0.1
     converted = (peaks - int(len(AC) / 2)).astype(float)
     finalCp = np.array([0, 0])
     finalCq = np.array([0, 0])
@@ -238,17 +237,17 @@ def getSample():
 
 def getSampleWith(addr):
     img = imread(addr)
-    (lx, rx) = (int(len(img[0])/4), int(len(img[0]) * 3/4))
-    (ly, ry) = (int(len(img)/4), int(len(img) * 3/4))
-    #(lx, rx) = (int(0), int(len(img[0])))
-    #(ly, ry) = (int(0), int(len(img)))
-    plt.imshow(img)
-    plt.show()
+    #(lx, rx) = (int(len(img[0])/4), int(len(img[0]) * 2/4))
+    #(ly, ry) = (int(len(img)/4), int(len(img) * 2/4))
+    (lx, rx) = (int(0), int(len(img[0])))
+    (ly, ry) = (int(0), int(len(img)))
+    #plt.imshow(img)
+    #plt.show()
     heat = []
     hsum = 0.0
+
     for cy in range(ly, ry):
         heat.append([])
-        print(cy)
         for cx in range(lx, rx):
             ac = acAvg(img, cx, cy)
             peaks = findPeaks(ac, 7, 0.5, 6)
@@ -259,4 +258,46 @@ def getSampleWith(addr):
     hsum /= (rx - lx) * (ry - ly)
     return (img[ly:ry, lx:rx], heat, hsum)
 
-res = 0
+def getSampleWithMult(addr):
+    img = imread(addr)
+    (lx, rx) = (int(len(img[0])/4), int(len(img[0]) * 3/4))
+    (ly, ry) = (int(len(img)/4), int(len(img) * 3/4))
+    #(lx, rx) = (int(0), int(len(img[0])))
+    #(ly, ry) = (int(0), int(len(img)))
+    #plt.imshow(img)
+    #plt.show()
+    global manager
+    manager = mp.Manager()
+    heat = manager.list()
+    lok = mp.Lock()
+    hsum = mp.Value('d', 0.0)
+    for _ in range(ry - ly):
+        heat.append([])
+
+    def f(hsum, lok, heat, cy):
+        res = []
+        currSum = 0.0
+        for cx in range(lx, rx):
+            ac = acAvg(img, cx, cy)
+            peaks = findPeaks(ac, 7, 0.5, 6)
+            (sc, v1, v2) = score(peaks, ac)
+            res.append((sc, v1.astype(int), v2.astype(int)))
+            currSum += sc
+        lok.acquire()
+        heat[cy - ly] = res
+        hsum.value = hsum.value + currSum
+        lok.release()
+        print(cy)
+    processes = []
+    for cy in range(ly, ry):
+        p = mp.Process(target = f, args = (hsum, lok, heat, cy))
+        processes.append(p)
+        p.start()
+    for process in processes:
+        process.join()
+    hsum.value /= (rx - lx) * (ry - ly)
+    return (img[ly:ry, lx:rx], heat, hsum.value)
+
+#st = time.time()
+#getSampleWithMult("FID-300/tracks_cropped/00026.jpg")
+#print("Time elapsed:", time.time() - st)

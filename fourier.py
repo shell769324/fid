@@ -1,5 +1,8 @@
 import cv2
 import numpy as np
+import csv
+import glob
+import sys
 from matplotlib import pyplot as plt
 from scipy import signal
 import random
@@ -9,7 +12,7 @@ from matplotlib.patches import Circle
 from matplotlib.image import imread
 
 from DLL import LinkedList, Node
-from autocorrelation import getSample, getSampleWith
+from autocorrelation import getSample, getSampleWith, getSampleWithMult
 
 
 def rect(X, v1, v2, img):
@@ -183,12 +186,12 @@ def group_patterns(H, img, avg):
             y_node = y_node.next
         # add pixel(i,j) to patterns
         patterns.append(x_data)
-    print("Here are the scores")
-    print(s_scores)
-    print("Its average is:")
-    print(np.mean(np.array(s_scores)))
-    print("The patterns are:")
-    print(patterns)
+    #print("Here are the scores")
+    #print(s_scores)
+    #print("Its average is:")
+    #print(np.mean(np.array(s_scores)))
+    #print("The patterns are:")
+    #print(patterns)
     return patterns
 
 def darn(img, patterns, colors):
@@ -225,24 +228,25 @@ def comp2(patterns1, patterns2, img1, img2):
         colors1.append(colors2[maxIdx])
         totalSim += maxSim
     totalSim /= len(patterns1)
-    darn(img1, patterns1, colors1)
-    darn(img2, patterns2, colors2)
+    #darn(img1, patterns1, colors1)
+    #darn(img2, patterns2, colors2)
     print("Similarity is", totalSim)
+    return totalSim
 
 
 def match():
-    (img1, H, avg) = getSampleWith("FID-300/tracks_cropped/00026.jpg")
+    (img1, H, avg) = getSampleWithMult("FID-300/tracks_cropped/00026.jpg")
     patterns1 = group_patterns(H, img1, avg)
-    (img2, H, avg) = getSampleWith("FID-300/references/00013.png")
+    (img2, H, avg) = getSampleWithMult("FID-300/references/00013.png")
     patterns2 = group_patterns(H, img2, avg)
-    (img3, H, avg) = getSampleWith("FID-300/references/00009.png")
+    (img3, H, avg) = getSampleWithMult("FID-300/references/00009.png")
     patterns3 = group_patterns(H, img3, avg)
     comp2(patterns1, patterns2, img1, img2)
     comp2(patterns1, patterns3, img1, img3)
 
 match()
 
-img = imread('FID-300/references/00033.png')
+#img = imread('FID-300/references/00033.png')
 # compute_four_descriptor([70,70], [20,20], [0, 50], img)
 # H = [[(11, [1, 2], [1, 3]), (11, [1, 2], [1, 3])],
 #      [(2, [2, 2], [2, 3]), (22, [2, 2], [2, 3])],
@@ -264,3 +268,39 @@ def test():
         plt.plot([cx, cx + v1[1]], [cy, cy + v1[0]], c=col, linewidth=5)
     # Show the image
     plt.show()
+
+def runBig():
+    ans = dict()
+    sys.stdout = open('result', 'w')
+    with open('FID-300/label_table.csv') as f:
+        reader = csv.reader(f)
+        for row in reader:
+            ans[int(row[0])] = int(row[1])
+    memoiCrime = dict()
+    for filename in glob.glob('crime/*.jpg'):  # assuming gif
+        last = int(filename[-8:-4])
+        (img, H, avg) = getSampleWith(filename)
+        patterns = group_patterns(H, img, avg)
+        memoiCrime[last] = (patterns, img)
+
+    memoiRef = dict()
+    for filename in glob.glob('ref/*.png'):  # assuming gif
+        last = int(filename[-8:-4])
+        (img, H, avg) = getSampleWith(filename)
+        patterns = group_patterns(H, img, avg)
+        memoiRef[last] = (patterns, img)
+
+    print("Crime | prediction | similarity")
+    for crimeID, crime in memoiCrime.items():
+        (patternsC, imgC) = crime
+        highSim = 0
+        okID = 0
+        for refID, ref in memoiRef.items():
+            (patternsR, imgR) = ref
+            sim = comp2(patternsC, patternsR, imgC, imgR)
+            if sim > highSim:
+                okID = refID
+                highSim = sim
+        print(crimeID, okID, highSim)
+
+#runBig()
